@@ -13,8 +13,6 @@
 #define WORK_KNOBS 0
 #define WORK_DOORS 1
 
-#define MAX_KNOBS_IN_BUFFER 100000
-
 /** handle pthread errors */
 #define handle_error_en(en, msg) \
         do { errno = en; perror(msg); exit(EXIT_FAILURE); } while (0)
@@ -23,7 +21,6 @@ static int total_knobs = 0;
 static int total_doors = 0;
 static int seconds_elapsed = 0;
 
-static sem_t sem_to_produce;
 static sem_t sem_to_consume;
 
 struct worker {
@@ -59,20 +56,6 @@ int main(int argc, char **argv) {
         return EXIT_FAILURE;
     }
 
-    printf("load: %d\n", load_balancing);
-    printf("doors: %d\n", threshhold_doors);
-    
-    printf("workers: %p\n", workers);
-    printf("seconds_elapsed: %d\n", seconds_elapsed);
-    printf("total_doors: %d\n", total_doors);
-    printf("total_knobs: %d\n", total_knobs);
-
-    // initialize production semaphore
-    if (sem_init(&sem_to_produce, 1, MAX_KNOBS_IN_BUFFER) < 0) {
-        perror("sem_init()");
-        return EXIT_FAILURE;
-    }
-
     // initialize consumption semaphore
     if (sem_init(&sem_to_consume, 1, 0) < 0) {
         perror("sem_init()");
@@ -97,52 +80,51 @@ int main(int argc, char **argv) {
         }
     }
 
+    // perform factory management
     while (1) {
         sleep(1);
-        seconds_elapsed++;
 
+        // requested doors have been produced
+        if (total_doors >= threshhold_doors)
+            break;
+
+        seconds_elapsed++;
         knob_rate = total_knobs / (double) seconds_elapsed;
         door_rate = total_doors / (double) seconds_elapsed;
-
-        printf("load: %d\n", load_balancing);
-        printf("doors: %d\n", threshhold_doors);
-        
-        printf("workers: %p\n", workers);
-        printf("seconds_elapsed: %d\n", seconds_elapsed);
-        printf("total_doors: %d\n", total_doors);
-        printf("total_knobs: %d\n", total_knobs);
-
-        if (total_doors >= threshhold_doors) break;
 
         printf("Producing %.2f knobs/s, %.2f doors/s\n", 
                 knob_rate, door_rate);
 
-        if (load_balancing && (door_rate / knob_rate) <= 0.9 ) {
-            for (int i = 0; i < NUM_WORKERS; i++) {
-                if (workers[i].work_type == WORK_KNOBS) {
+        // no need to perform worker update
+        if (!load_balancing || door_rate / knob_rate >= 0.9)
+            continue;
 
-                    workers[i].work_type = WORK_DOORS;
-                    total_door_workers++;
-                    total_knob_workers--;
+        for (int i = 0; i < NUM_WORKERS; i++) {
+            if (workers[i].work_type != WORK_KNOBS)
+                continue;
 
-                    printf("\tWorkers reassigned: %d making knobs, %d making doors\n", 
-                            total_knob_workers, total_door_workers);
+            // to the current worker, assign door work
+            workers[i].work_type = WORK_DOORS;
+            total_door_workers++;
+            total_knob_workers--;
 
-                    break;
-                }
-            }
-        }
+            printf("\tWorkers reassigned: %d making knobs, %d making doors\n",
+                    total_knob_workers, total_door_workers);
 
-    }
-
-    // cancel all workers
-    for (int i = 0; i < NUM_WORKERS; i++) {
-        if ((en = pthread_cancel(workers[i].thread)) != 0) {
-            handle_error_en(en, "pthread_cancel()");
+            break;
         }
     }
 
-    // cleanup
+    // print final stats
+    printf("%d doors produced in %.2fs (%.2f doors/s)\n",
+            total_doors, (float) seconds_elapsed, door_rate);
+    printf("%d knobs produced\n", total_knobs);
+
+    // cleanup semaphores
+    if (sem_destroy(&sem_to_consume) < 0) {
+        perror("sem_destroy()");
+        return EXIT_FAILURE;
+    }
 
     return EXIT_SUCCESS;
 }
@@ -150,16 +132,9 @@ int main(int argc, char **argv) {
 static void *worker_routine(void *arg) {
     struct worker *worker = arg;
     unsigned seed = (unsigned) pthread_self();
-    int en;
 
     //compute lazyness
     worker->lazyness = rand_r(&seed) / (double) RAND_MAX;
-
-    printf("%f\n", worker->lazyness);
-
-    // make the thread cancellable
-    if ((en = pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, NULL)) != 0)
-        handle_error_en(en, "pthread_setcancelstate()");
 
     while (1) {
         switch(worker->work_type) {
@@ -182,4 +157,5 @@ static void *worker_routine(void *arg) {
         }
     }
 
+    return NULL;
 }
