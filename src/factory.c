@@ -40,6 +40,10 @@ int main(int argc, char **argv) {
     int threshhold_doors = THRESHHOLD_DOORS_DFLT;
     int en;
     struct worker workers[NUM_WORKERS];
+    float knob_rate;
+    float door_rate;
+    int total_door_workers;
+    int total_knob_workers;
 
     if (argc < 3) {
         fprintf(stderr, "Usage: ./factory <enable load balancing> <number of doors to produce>\n");
@@ -79,8 +83,10 @@ int main(int argc, char **argv) {
     for (int i = 0; i < NUM_WORKERS; i++) {
         if (i % 2) {
             workers->work_type = WORK_DOORS;
+            total_door_workers++;
         } else {
             workers->work_type = WORK_KNOBS;
+            total_knob_workers++;
         }
     }
 
@@ -95,6 +101,9 @@ int main(int argc, char **argv) {
         sleep(1);
         seconds_elapsed++;
 
+        knob_rate = total_knobs / (double) seconds_elapsed;
+        door_rate = total_doors / (double) seconds_elapsed;
+
         printf("load: %d\n", load_balancing);
         printf("doors: %d\n", threshhold_doors);
         
@@ -106,10 +115,22 @@ int main(int argc, char **argv) {
         if (total_doors >= threshhold_doors) break;
 
         printf("Producing %.2f knobs/s, %.2f doors/s\n", 
-                total_knobs / (double) seconds_elapsed, total_doors / (double) seconds_elapsed);
+                knob_rate, door_rate);
 
-        if (load_balancing) {
-            // perform load balancing
+        if (load_balancing && (door_rate / knob_rate) <= 0.9 ) {
+            for (int i = 0; i < NUM_WORKERS; i++) {
+                if (workers[i].work_type == WORK_KNOBS) {
+
+                    workers[i].work_type = WORK_DOORS;
+                    total_door_workers++;
+                    total_knob_workers--;
+
+                    printf("\tWorkers reassigned: %d making knobs, %d making doors\n", 
+                            total_knob_workers, total_door_workers);
+
+                    break;
+                }
+            }
         }
 
     }
