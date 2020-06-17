@@ -39,8 +39,8 @@ int main(int argc, char **argv) {
     struct worker workers[NUM_WORKERS];
     float knob_rate;
     float door_rate;
-    int total_door_workers;
-    int total_knob_workers;
+    int total_door_workers = 0;
+    int total_knob_workers = 0;
 
     if (argc < 3) {
         fprintf(stderr, "Usage: ./factory <enable load balancing> <number of doors to produce>\n");
