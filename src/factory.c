@@ -23,6 +23,8 @@ static int seconds_elapsed = 0;
 
 static sem_t sem_to_consume;
 
+static pthread_mutex_t mutexes[2] = { PTHREAD_MUTEX_INITIALIZER, PTHREAD_MUTEX_INITIALIZER };
+
 struct worker {
     pthread_t thread;
     float lazyness;
@@ -143,14 +145,21 @@ static void *worker_routine(void *arg) {
             usleep((10 + worker->lazyness * 90) * 1000);
 
             sem_wait(&sem_to_consume);
+            
+            pthread_mutex_lock(&mutexes[0]);
             total_doors++;
+            pthread_mutex_unlock(&mutexes[0]);
+
             break;
 
         case WORK_KNOBS:
             // simulate production
             usleep((10 + worker->lazyness * 30) * 1000);
 
+            pthread_mutex_lock(&mutexes[1]);
             total_knobs++;
+            pthread_mutex_unlock(&mutexes[1]);
+
             sem_post(&sem_to_consume);
 
             break;
